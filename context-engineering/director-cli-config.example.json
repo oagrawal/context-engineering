@@ -1,0 +1,6 @@
+{
+  "name": "git-context-controller",
+  "command": "python",
+  "args": ["/Users/omagr/Documents/Personal/Agents/GCC/server.py"]
+}
+

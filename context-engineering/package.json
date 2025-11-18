@@ -1,0 +1,20 @@
+{
+  "name": "git-context-controller",
+  "version": "1.0.0",
+  "description": "Git-like context management MCP server for LLM agents",
+  "type": "module",
+  "main": "server.py",
+  "scripts": {
+    "start": "python server.py"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "git",
+    "context-management"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {}
+}
+
