@@ -1,4 +1,4 @@
-# Git Context Controller MCP Server
+# Context Engineering Tool MCP Server
 
 A Python MCP server that implements Git-like context management for LLM agents using a local `./context/` folder structure.
 
@@ -41,7 +41,7 @@ Add to your `settings.json`:
 ```json
 {
   "mcpServers": {
-    "git-context-controller": {
+    "context-engineering-tool": {
       "command": "python",
       "args": ["/absolute/path/to/GCC/server.py"]
     }
@@ -57,7 +57,7 @@ Add to your MCP server configuration:
 
 ```json
 {
-  "name": "git-context-controller",
+  "name": "context-engineering-tool",
   "command": "python",
   "args": ["/absolute/path/to/GCC/server.py"]
 }

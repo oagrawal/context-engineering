@@ -21,7 +21,7 @@ from server import (
 
 async def main():
     """Test the MCP server tools."""
-    print("🧪 Testing Git Context Controller MCP Server\n")
+    print("🧪 Testing Context Engineering Tool MCP Server\n")
     
     # Ensure context structure exists
     ensure_context_structure()

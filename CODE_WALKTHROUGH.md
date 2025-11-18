@@ -8,12 +8,12 @@ This document explains the key parts of `server.py` with simple explanations.
 from fastmcp import FastMCP
 
 # Initialize FastMCP server
-mcp = FastMCP("Git Context Controller")
+mcp = FastMCP("Context Engineering Tool")
 ```
 
 **What this does:**
 - Imports the FastMCP library
-- Creates a server instance named "Git Context Controller"
+- Creates a server instance named "Context Engineering Tool"
 - This server will handle all communication with Gemini CLI
 
 ## 2. Directory Paths

@@ -1,5 +1,5 @@
 """
-Git Context Controller MCP Server
+Context Engineering Tool MCP Server
 
 A Python MCP server that implements Git-like context management for LLM agents
 using a local ./context/ folder structure.
@@ -14,7 +14,7 @@ from typing import Any, Optional
 from fastmcp import FastMCP
 
 # Initialize FastMCP server
-mcp = FastMCP("Git Context Controller")
+mcp = FastMCP("Context Engineering Tool")
 
 # Base context directory
 CONTEXT_DIR = Path("./context")

@@ -1,4 +1,4 @@
-# Quick Start Guide: Git Context Controller MCP Server
+# Quick Start Guide: Context Engineering Tool MCP Server
 
 ## What is an MCP Server?
 
@@ -16,7 +16,7 @@ When you ask Gemini to "save this context" or "create a branch", it calls our MC
 from fastmcp import FastMCP
 
 # Create the server
-mcp = FastMCP("Git Context Controller")
+mcp = FastMCP("Context Engineering Tool")
 
 # Define tools (functions the AI can call)
 @mcp.tool()
@@ -134,7 +134,7 @@ Open `settings.json` and add our server configuration:
 ```json
 {
   "mcpServers": {
-    "git-context-controller": {
+    "context-engineering-tool": {
       "command": "python",
       "args": ["/Users/omagr/Documents/Personal/Agents/GCC/server.py"]
     }

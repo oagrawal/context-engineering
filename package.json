@@ -1,5 +1,5 @@
 {
-  "name": "git-context-controller",
+  "name": "context-engineering-tool",
   "version": "1.0.0",
   "description": "Git-like context management MCP server for LLM agents",
   "type": "module",

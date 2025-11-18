@@ -37,7 +37,7 @@ python test_example.py
 
 You should see output like:
 ```
-🧪 Testing Git Context Controller MCP Server
+🧪 Testing Context Engineering Tool MCP Server
 ✅ Context structure initialized
 📦 Test 1: Creating branch 'test-feature'...
 ...
@@ -93,7 +93,7 @@ Edit the `settings.json` file. It should look like this:
 ```json
 {
   "mcpServers": {
-    "git-context-controller": {
+    "context-engineering-tool": {
       "command": "python",
       "args": ["/Users/omagr/Documents/Personal/Agents/GCC/server.py"]
     }
@@ -128,7 +128,7 @@ Your `settings.json` should look like this (with your actual path):
 ```json
 {
   "mcpServers": {
-    "git-context-controller": {
+    "context-engineering-tool": {
       "command": "python",
       "args": ["/full/path/to/GCC/server.py"]
     }
@@ -268,7 +268,7 @@ pip install -r requirements.txt
 # Update settings.json to use venv Python
 {
   "mcpServers": {
-    "git-context-controller": {
+    "context-engineering-tool": {
       "command": "/full/path/to/GCC/venv/bin/python",
       "args": ["/full/path/to/GCC/server.py"]
     }
