@@ -39,9 +39,9 @@ context info [--level LEVEL] [--branch BRANCH] [--format FORMAT]
 ├── .current_branch      # Current branch pointer
 └── branches/
     └── <branch-name>/
-        ├── commit.md    # Structured commit history
-        ├── log.md       # Fine-grained reasoning cycles
-        └── metadata.yaml # Structured meta-level information
+        ├── commits.yaml # Structured commit history (YAML)
+        ├── log.yaml     # Fine-grained reasoning cycles (YAML)
+        └── metadata.yaml # Structured meta-level information (YAML)
 ```
 
 ## Development

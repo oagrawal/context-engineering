@@ -3,13 +3,34 @@
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Optional, Dict, Any, List
-import json
 import yaml
 
 
 @dataclass
+class BranchMetadata:
+    """Minimal metadata for a branch"""
+    name: str
+    created_date: str  # ISO format datetime string
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary for YAML serialization"""
+        return {
+            'name': self.name,
+            'created_date': self.created_date
+        }
+    
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> 'BranchMetadata':
+        """Create from dictionary"""
+        return cls(
+            name=data['name'],
+            created_date=data['created_date']
+        )
+
+
+@dataclass
 class CommitEntry:
-    """A single commit entry stored in commit.json"""
+    """A single commit entry stored in commits.yaml"""
     commit_id: str  # Unique identifier (timestamp or UUID)
     branch_purpose: str  # Reiteration of branch purpose
     previous_progress: str  # Combined previous progress + contribution
@@ -17,13 +38,13 @@ class CommitEntry:
     timestamp: str  # ISO format datetime string
     
     def to_dict(self) -> Dict[str, Any]:
-        """Convert to dictionary for JSON serialization"""
+        """Convert to dictionary for YAML serialization"""
         return {
             'commit_id': self.commit_id,
+            'timestamp': self.timestamp,
             'branch_purpose': self.branch_purpose,
             'previous_progress': self.previous_progress,
-            'commit_contribution': self.commit_contribution,
-            'timestamp': self.timestamp
+            'commit_contribution': self.commit_contribution
         }
     
     @classmethod
@@ -31,21 +52,11 @@ class CommitEntry:
         """Create from dictionary"""
         return cls(
             commit_id=data['commit_id'],
+            timestamp=data['timestamp'],
             branch_purpose=data['branch_purpose'],
             previous_progress=data['previous_progress'],
-            commit_contribution=data['commit_contribution'],
-            timestamp=data['timestamp']
+            commit_contribution=data['commit_contribution']
         )
-    
-    def to_json(self) -> str:
-        """Convert to JSON string for storage"""
-        return json.dumps(self.to_dict(), indent=2, ensure_ascii=False)
-    
-    @classmethod
-    def from_json(cls, json_content: str) -> 'CommitEntry':
-        """Create from JSON string"""
-        data = json.loads(json_content)
-        return cls.from_dict(data)
     
     def to_markdown(self) -> str:
         """Convert to markdown format for LLM consumption"""
@@ -69,13 +80,13 @@ class CommitEntry:
 
 @dataclass
 class LogEntry:
-    """A single log entry stored in log.json"""
+    """A single log entry stored in log.yaml"""
     timestamp: str  # ISO format datetime string
     reasoning_step: str  # The reasoning/thinking step
     source_branch: Optional[str] = None  # Track which branch this came from (for merges)
     
     def to_dict(self) -> Dict[str, Any]:
-        """Convert to dictionary for JSON serialization"""
+        """Convert to dictionary for YAML serialization"""
         result = {
             'timestamp': self.timestamp,
             'reasoning_step': self.reasoning_step
@@ -93,23 +104,10 @@ class LogEntry:
             source_branch=data.get('source_branch')
         )
     
-    def to_json(self) -> str:
-        """Convert to JSON string for storage"""
-        return json.dumps(self.to_dict(), indent=2, ensure_ascii=False)
-    
-    @classmethod
-    def from_json(cls, json_content: str) -> 'LogEntry':
-        """Create from JSON string"""
-        data = json.loads(json_content)
-        return cls.from_dict(data)
-    
     def to_markdown(self) -> str:
         """Convert to markdown format for LLM consumption"""
-        header = f"## {self.timestamp}"
-        if self.source_branch:
-            header += f" (from branch: {self.source_branch})"
-        
-        return f"""{header}
+        source_tag = f" *[from {self.source_branch}]*" if self.source_branch else ""
+        return f"""## {self.timestamp}{source_tag}
 
 {self.reasoning_step}
 
@@ -123,11 +121,9 @@ class MetadataYAML:
     
     def __init__(self, file_structure: Optional[Dict[str, Any]] = None,
                  env_config: Optional[Dict[str, Any]] = None,
-                 created_date: Optional[str] = None,
                  custom_entries: Optional[Dict[str, Any]] = None):
         self.file_structure = file_structure or {}
         self.env_config = env_config or {}
-        self.created_date = created_date  # Branch creation date
         self.custom_entries = custom_entries or {}
     
     def to_dict(self) -> Dict[str, Any]:
@@ -136,8 +132,6 @@ class MetadataYAML:
             'file_structure': self.file_structure,
             'env_config': self.env_config
         }
-        if self.created_date:
-            result['created_date'] = self.created_date
         result.update(self.custom_entries)
         return result
     
@@ -146,26 +140,50 @@ class MetadataYAML:
         """Create from dictionary"""
         file_structure = data.get('file_structure', {})
         env_config = data.get('env_config', {})
-        created_date = data.get('created_date')
         custom_entries = {k: v for k, v in data.items() 
-                         if k not in ['file_structure', 'env_config', 'created_date']}
+                         if k not in ['file_structure', 'env_config']}
         
         return cls(
             file_structure=file_structure,
             env_config=env_config,
-            created_date=created_date,
             custom_entries=custom_entries
         )
     
     def to_yaml(self) -> str:
         """Convert to YAML string"""
-        return yaml.dump(self.to_dict(), default_flow_style=False, sort_keys=False)
+        return yaml.dump(self.to_dict(), default_flow_style=False, sort_keys=False, allow_unicode=True)
     
     @classmethod
     def from_yaml(cls, yaml_content: str) -> 'MetadataYAML':
         """Create from YAML string"""
         data = yaml.safe_load(yaml_content) or {}
         return cls.from_dict(data)
+
+
+def commits_to_yaml(commits: List[CommitEntry]) -> str:
+    """Convert list of commits to YAML string"""
+    commits_dict = {'commits': [c.to_dict() for c in commits]}
+    return yaml.dump(commits_dict, default_flow_style=False, sort_keys=False, allow_unicode=True)
+
+
+def commits_from_yaml(yaml_content: str) -> List[CommitEntry]:
+    """Parse list of commits from YAML string"""
+    data = yaml.safe_load(yaml_content) or {}
+    commits_data = data.get('commits', [])
+    return [CommitEntry.from_dict(c) for c in commits_data]
+
+
+def logs_to_yaml(logs: List[LogEntry]) -> str:
+    """Convert list of logs to YAML string"""
+    logs_dict = {'logs': [l.to_dict() for l in logs]}
+    return yaml.dump(logs_dict, default_flow_style=False, sort_keys=False, allow_unicode=True)
+
+
+def logs_from_yaml(yaml_content: str) -> List[LogEntry]:
+    """Parse list of logs from YAML string"""
+    data = yaml.safe_load(yaml_content) or {}
+    logs_data = data.get('logs', [])
+    return [LogEntry.from_dict(l) for l in logs_data]
 
 
 def validate_branch_name(name: str) -> bool:
@@ -233,60 +251,4 @@ def find_divergence_point(commits_a: List[CommitEntry], commits_b: List[CommitEn
     
     # Return the last common commit ID
     return common_commits[-1].commit_id
-
-
-def commits_to_json(commits: List[CommitEntry]) -> str:
-    """Convert a list of commits to JSON array string"""
-    return json.dumps([c.to_dict() for c in commits], indent=2, ensure_ascii=False)
-
-
-def commits_from_json(json_content: str) -> List[CommitEntry]:
-    """Parse a list of commits from JSON array string"""
-    if not json_content.strip():
-        return []
-    data_list = json.loads(json_content)
-    return [CommitEntry.from_dict(item) for item in data_list]
-
-
-def commits_to_markdown(commits: List[CommitEntry]) -> str:
-    """Convert a list of commits to markdown for LLM consumption"""
-    if not commits:
-        return "# Branch Commit History\n\nNo commits yet.\n"
-    
-    markdown = "# Branch Commit History\n\n"
-    for commit in commits:
-        markdown += commit.to_markdown()
-    return markdown
-
-
-def logs_to_json(logs: List[LogEntry]) -> str:
-    """Convert a list of log entries to JSON array string"""
-    return json.dumps([l.to_dict() for l in logs], indent=2, ensure_ascii=False)
-
-
-def logs_from_json(json_content: str) -> List[LogEntry]:
-    """Parse a list of log entries from JSON array string"""
-    if not json_content.strip():
-        return []
-    data_list = json.loads(json_content)
-    return [LogEntry.from_dict(item) for item in data_list]
-
-
-def logs_to_markdown(logs: List[LogEntry], include_branch_tags: bool = False) -> str:
-    """Convert a list of log entries to markdown for LLM consumption"""
-    if not logs:
-        return "# Reasoning Log\n\nNo log entries yet.\n"
-    
-    markdown = "# Reasoning Log\n\n"
-    current_branch = None
-    
-    for log in logs:
-        # Add branch tag if branch changed and include_branch_tags is True
-        if include_branch_tags and log.source_branch and log.source_branch != current_branch:
-            markdown += f"\n== {log.source_branch} ==\n\n"
-            current_branch = log.source_branch
-        
-        markdown += log.to_markdown()
-    
-    return markdown
 

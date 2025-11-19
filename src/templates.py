@@ -18,41 +18,41 @@ def get_main_md_template() -> str:
 """
 
 
-def get_commit_json_template() -> str:
-    """Template for commit.json (empty JSON array initially)"""
-    return "[]\n"
+def get_commits_yaml_template() -> str:
+    """Template for commits.yaml (empty initially, first commit will define branch purpose)"""
+    return """# Branch Commit History
+# Commits will be added here as the branch progresses
+
+commits: []
+
+"""
 
 
-def get_log_json_template() -> str:
-    """Template for log.json (empty JSON array initially)"""
-    return "[]\n"
+def get_log_yaml_template() -> str:
+    """Template for log.yaml (empty initially)"""
+    return """# Reasoning Log
+# Fine-grained reasoning cycles will be logged here
+
+logs: []
+
+"""
 
 
-def get_metadata_yaml_template(created_date: str = None) -> str:
+def get_metadata_yaml_template() -> str:
     """Template for metadata.yaml"""
-    import yaml
-    data = {
-        'file_structure': {},
-        'env_config': {}
-    }
-    if created_date:
-        data['created_date'] = created_date
-    
-    yaml_str = yaml.dump(data, default_flow_style=False, sort_keys=False)
-    return f"""# Branch Metadata
+    return """# Branch Metadata
 
-{yaml_str}
-# Example file_structure:
-# file_structure:
-#   src/:
-#     main.py: "Main entry point"
-#     utils.py: "Utility functions"
-#
-# Example env_config:
-# env_config:
-#   python_version: "3.9+"
-#   dependencies: ["click", "pyyaml"]
-#
+file_structure: {}
+  # Example structure:
+  # src/
+  #   - main.py: "Main entry point"
+  #   - utils.py: "Utility functions"
+
+env_config: {}
+  # Example:
+  # python_version: "3.9+"
+  # dependencies: ["click", "pyyaml"]
+
 # Add custom metadata entries below as needed
 
 """

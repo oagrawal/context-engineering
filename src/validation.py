@@ -2,9 +2,33 @@
 
 from typing import Optional
 from .models import (
-    CommitEntry, LogEntry, MetadataYAML,
+    BranchMetadata, CommitEntry, LogEntry, MetadataYAML,
     validate_branch_name, get_current_timestamp
 )
+
+
+def validate_branch_metadata(metadata: BranchMetadata) -> tuple[bool, Optional[str]]:
+    """
+    Validate branch metadata.
+    Returns: (is_valid, error_message)
+    """
+    if not metadata.name:
+        return False, "Branch name cannot be empty"
+    
+    if not validate_branch_name(metadata.name):
+        return False, f"Invalid branch name: {metadata.name}"
+    
+    if not metadata.created_date:
+        return False, "Created date cannot be empty"
+    
+    # Basic ISO format check
+    try:
+        from datetime import datetime
+        datetime.fromisoformat(metadata.created_date.replace('Z', '+00:00'))
+    except ValueError:
+        return False, f"Invalid date format: {metadata.created_date}"
+    
+    return True, None
 
 
 def validate_commit_entry(commit: CommitEntry) -> tuple[bool, Optional[str]]:
