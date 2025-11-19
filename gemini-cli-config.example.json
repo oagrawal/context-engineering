@@ -1,9 +1,0 @@
-{
-  "mcpServers": {
-    "context-engineering-tool": {
-      "command": "python",
-      "args": ["/Users/omagr/Documents/Personal/Agents/GCC/server.py"]
-    }
-  }
-}
-
