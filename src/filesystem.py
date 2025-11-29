@@ -241,6 +241,47 @@ def append_log(branch_name: str, log_entry: LogEntry) -> None:
     write_logs(branch_name, logs)
 
 
+def clear_all_logs(branch_name: str) -> None:
+    """Clear all logs from a branch's log.yaml"""
+    write_logs(branch_name, [])
+
+
+def clear_logs_range(branch_name: str, start: int, end: int) -> None:
+    """Clear logs in a specific range (start inclusive, end exclusive)
+    
+    Args:
+        branch_name: Name of the branch
+        start: Start index (inclusive), must be >= 0
+        end: End index (exclusive), must be >= start
+    
+    Raises:
+        ValueError: If start < 0, end < start, or indices are out of bounds
+    """
+    if start < 0:
+        raise ValueError(f"Start index must be >= 0, got {start}")
+    if end < start:
+        raise ValueError(f"End index must be >= start, got end={end}, start={start}")
+    
+    logs = read_logs(branch_name)
+    if start > len(logs):
+        raise ValueError(f"Start index {start} is out of bounds (only {len(logs)} logs available)")
+    
+    # Clamp end to available logs (don't error, just use what's available)
+    end = min(end, len(logs))
+    
+    remaining_logs = logs[:start] + logs[end:]
+    write_logs(branch_name, remaining_logs)
+
+
+def clear_logs_count(branch_name: str, count: int) -> None:
+    """Clear the last N log entries"""
+    if count <= 0:
+        return
+    logs = read_logs(branch_name)
+    remaining_logs = logs[:-count] if count < len(logs) else []
+    write_logs(branch_name, remaining_logs)
+
+
 def read_metadata(branch_name: str) -> MetadataYAML:
     """Read metadata from a branch's metadata.yaml"""
     metadata_path = get_branch_metadata_path(branch_name)
