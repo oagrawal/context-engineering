@@ -2,7 +2,7 @@
 
 import subprocess
 import os
-from typing import Optional, List
+from typing import Optional, List, Set
 from datetime import datetime
 from . import filesystem
 from .models import (
@@ -10,6 +10,54 @@ from .models import (
     generate_commit_id, get_current_timestamp,
     validate_branch_name, compare_commits, find_divergence_point
 )
+
+
+def _scan_file_structure(root_path: str, max_depth: int = 3) -> dict:
+    """
+    Scan directory structure and return a simplified file tree.
+    
+    Args:
+        root_path: Root directory to scan
+        max_depth: Maximum depth to scan (default 3)
+    
+    Returns:
+        Dictionary with file structure
+    """
+    structure = {}
+    root_path = os.path.abspath(root_path)
+    
+    # Directories to skip
+    skip_dirs = {'.git', '.context', 'node_modules', '__pycache__', '.venv', 'venv', 
+                 '.env', 'dist', 'build', '.next', '.cache', 'coverage'}
+    
+    def scan_dir(path: str, depth: int) -> dict:
+        if depth > max_depth:
+            return {}
+        
+        result = {}
+        try:
+            for entry in os.scandir(path):
+                if entry.name.startswith('.') and entry.name not in ['.gitignore']:
+                    continue
+                if entry.is_dir() and entry.name in skip_dirs:
+                    continue
+                
+                rel_path = os.path.relpath(entry.path, root_path)
+                
+                if entry.is_file():
+                    result[rel_path] = 'file'
+                elif entry.is_dir():
+                    sub_result = scan_dir(entry.path, depth + 1)
+                    if sub_result:
+                        result[rel_path] = sub_result
+                    else:
+                        result[rel_path] = 'dir'
+        except PermissionError:
+            pass
+        
+        return result
+    
+    return scan_dir(root_path, 0)
 
 
 def log_command(reasoning_step: str) -> None:
@@ -44,13 +92,15 @@ def log_command(reasoning_step: str) -> None:
     print(f"✓ Logged to branch '{current_branch}'")
 
 
-def commit_command(message: Optional[str] = None, from_log_range: Optional[str] = None) -> None:
+def commit_command(message: Optional[str] = None, from_log_range: Optional[str] = None, 
+                   update_metadata: bool = True) -> None:
     """
     COMMIT command: Checkpoint important points in chat session
     
     Args:
         message: Optional commit message/contribution description
         from_log_range: Optional log range to extract from (e.g., "last:5" or "all")
+        update_metadata: Whether to auto-update file structure in metadata (default True)
     """
     # Ensure context directory exists
     filesystem.ensure_context_directory()
@@ -68,12 +118,8 @@ def commit_command(message: Optional[str] = None, from_log_range: Optional[str] 
     if commits:
         branch_purpose = commits[0].branch_purpose
     
-    # Generate previous progress
-    previous_progress = "Initial state"
-    if commits:
-        last_commit = commits[-1]
-        # Combine previous progress and contribution from last commit
-        previous_progress = f"{last_commit.previous_progress}\n\n{last_commit.commit_contribution}"
+    # Get parent commit ID (for chain reference instead of bloated previous_progress)
+    parent_commit = commits[-1].commit_id if commits else None
     
     # Generate commit contribution
     commit_contribution = message or "Progress checkpoint"
@@ -99,20 +145,31 @@ def commit_command(message: Optional[str] = None, from_log_range: Optional[str] 
             if log_summaries:
                 commit_contribution = "\n\n".join(log_summaries)
     
-    # Create new commit entry
+    # Create new commit entry with parent reference (no bloated previous_progress)
     new_commit = CommitEntry(
         commit_id=generate_commit_id(),
         branch_purpose=branch_purpose,
-        previous_progress=previous_progress,
         commit_contribution=commit_contribution,
-        timestamp=get_current_timestamp()
+        timestamp=get_current_timestamp(),
+        parent_commit=parent_commit
     )
     
     # Append commit
     filesystem.append_commit(current_branch, new_commit)
     
-    # TODO: Optionally update metadata.yaml if structural changes detected
-    # For now, we'll skip this - can be added later
+    # Update metadata with file structure
+    if update_metadata:
+        try:
+            workspace_root = filesystem.get_workspace_root()
+            file_structure = _scan_file_structure(workspace_root, max_depth=2)
+            metadata = filesystem.read_metadata(current_branch)
+            metadata.file_structure = file_structure
+            filesystem.write_metadata(current_branch, metadata)
+        except Exception:
+            pass  # Non-critical, continue even if metadata update fails
+    
+    # Update main.md with recent progress
+    update_main_md_with_progress(current_branch, new_commit)
     
     # Create git commit
     git_commit_context(current_branch, new_commit.commit_id)
@@ -120,7 +177,8 @@ def commit_command(message: Optional[str] = None, from_log_range: Optional[str] 
     print(f"✓ Committed to branch '{current_branch}' (commit: {new_commit.commit_id})")
 
 
-def branch_command(branch_name: str, from_branch: Optional[str] = None, empty: bool = False) -> None:
+def branch_command(branch_name: str, from_branch: Optional[str] = None, empty: bool = False,
+                   purpose: Optional[str] = None) -> None:
     """
     BRANCH command: Create a new branch
     
@@ -128,6 +186,7 @@ def branch_command(branch_name: str, from_branch: Optional[str] = None, empty: b
         branch_name: Name of the new branch
         from_branch: Optional source branch to copy from (defaults to current branch)
         empty: If True, create empty branch (empty commits.yaml and log.yaml)
+        purpose: Optional description of the branch purpose
     """
     # Ensure context directory exists
     filesystem.ensure_context_directory()
@@ -161,12 +220,27 @@ def branch_command(branch_name: str, from_branch: Optional[str] = None, empty: b
     
     # Switch to new branch
     filesystem.set_current_branch(branch_name)
+    
+    # If purpose is provided, create initial commit with that purpose
+    if purpose:
+        initial_commit = CommitEntry(
+            commit_id=generate_commit_id(),
+            branch_purpose=purpose,
+            commit_contribution=f"Created branch '{branch_name}': {purpose}",
+            timestamp=get_current_timestamp(),
+            parent_commit=None
+        )
+        filesystem.append_commit(branch_name, initial_commit)
+        print(f"✓ Set branch purpose: {purpose}")
+    
     print(f"✓ Switched to branch '{branch_name}'")
 
 
 def merge_command(source_branches: List[str]) -> None:
     """
     MERGE command: Merge context from multiple branches into current branch
+    
+    Only merges unique commits and logs (deduplication based on commit_id and timestamp+reasoning_step).
     
     Args:
         source_branches: List of branch names to merge from
@@ -183,6 +257,10 @@ def merge_command(source_branches: List[str]) -> None:
     current_commits = filesystem.read_commits(current_branch)
     current_logs = filesystem.read_logs(current_branch)
     current_metadata = filesystem.read_metadata(current_branch)
+    
+    # Build sets for deduplication
+    existing_commit_ids: Set[str] = {c.commit_id for c in current_commits}
+    existing_log_keys: Set[tuple] = {(log.timestamp, log.reasoning_step) for log in current_logs}
     
     # Process each source branch
     merged_commits = []
@@ -202,30 +280,21 @@ def merge_command(source_branches: List[str]) -> None:
         source_logs = filesystem.read_logs(source_branch)
         source_metadata = filesystem.read_metadata(source_branch)
         
-        # Find divergence point
-        divergence_point = find_divergence_point(current_commits, source_commits)
+        # Only merge commits that don't already exist (by commit_id)
+        for commit in source_commits:
+            if commit.commit_id not in existing_commit_ids:
+                merged_commits.append(commit)
+                existing_commit_ids.add(commit.commit_id)
         
-        if divergence_point:
-            # Find commits after divergence point
-            divergence_index = None
-            for i, commit in enumerate(source_commits):
-                if commit.commit_id == divergence_point:
-                    divergence_index = i + 1
-                    break
-            
-            if divergence_index is not None:
-                unique_commits = source_commits[divergence_index:]
-                merged_commits.extend(unique_commits)
-        else:
-            # No common history, merge all commits
-            merged_commits.extend(source_commits)
-        
-        # Merge logs with source branch tags
+        # Only merge logs that don't already exist (by timestamp + reasoning_step)
         for log in source_logs:
-            # Set source_branch if not already set
-            if not log.source_branch:
-                log.source_branch = source_branch
-            merged_logs.append(log)
+            log_key = (log.timestamp, log.reasoning_step)
+            if log_key not in existing_log_keys:
+                # Set source_branch if not already set
+                if not log.source_branch:
+                    log.source_branch = source_branch
+                merged_logs.append(log)
+                existing_log_keys.add(log_key)
         
         # Merge metadata (simple merge - combine file structures and env configs)
         if source_metadata.file_structure:
@@ -248,13 +317,14 @@ def merge_command(source_branches: List[str]) -> None:
     # Write updated metadata
     filesystem.write_metadata(current_branch, current_metadata)
     
-    # Create merge commit entry
+    # Create merge commit entry (using parent_commit reference)
+    parent_commit_id = current_commits[-1].commit_id if current_commits else None
     merge_commit = CommitEntry(
         commit_id=generate_commit_id(),
         branch_purpose=current_commits[0].branch_purpose if current_commits else "Merged branch",
-        previous_progress=current_commits[-1].previous_progress if current_commits else "Initial state",
         commit_contribution=f"Merged branches: {', '.join(merged_branch_names)}",
-        timestamp=get_current_timestamp()
+        timestamp=get_current_timestamp(),
+        parent_commit=parent_commit_id
     )
     filesystem.append_commit(current_branch, merge_commit)
     
@@ -277,6 +347,57 @@ def update_main_md_with_merge(merged_branches: List[str], target_branch: str) ->
     
     merge_entry = f"- **{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}**: Merged {', '.join(merged_branches)} into {target_branch}\n"
     main_content += merge_entry
+    
+    filesystem.write_main_md(main_content)
+
+
+def update_main_md_with_progress(branch_name: str, commit: CommitEntry) -> None:
+    """Update main.md with commit progress in the TODO/milestones section"""
+    main_content = filesystem.read_main_md()
+    
+    # Find the TODO List section and add the milestone there
+    todo_marker = "## TODO List"
+    milestones_marker = "## Key Milestones"
+    
+    # Create a milestone entry
+    timestamp = datetime.now().strftime('%Y-%m-%d %H:%M')
+    # Truncate long contributions for the milestone
+    contribution_summary = commit.commit_contribution[:100]
+    if len(commit.commit_contribution) > 100:
+        contribution_summary += "..."
+    
+    milestone_entry = f"- [{timestamp}] **{branch_name}**: {contribution_summary}\n"
+    
+    # Try to insert after Key Milestones section
+    if milestones_marker in main_content:
+        # Find the position after the marker line
+        marker_pos = main_content.find(milestones_marker)
+        # Find the end of the marker line
+        newline_pos = main_content.find('\n', marker_pos)
+        if newline_pos != -1:
+            # Skip any HTML comment lines
+            insert_pos = newline_pos + 1
+            remaining = main_content[insert_pos:]
+            # Skip empty lines and comment lines
+            lines = remaining.split('\n')
+            skip_count = 0
+            for line in lines:
+                stripped = line.strip()
+                if stripped.startswith('<!--') or stripped == '' or stripped.endswith('-->'):
+                    skip_count += len(line) + 1  # +1 for newline
+                else:
+                    break
+            insert_pos += skip_count
+            
+            main_content = main_content[:insert_pos] + milestone_entry + main_content[insert_pos:]
+    else:
+        # If no milestones section, add one
+        if todo_marker in main_content:
+            marker_pos = main_content.find(todo_marker)
+            main_content = main_content[:marker_pos] + f"{milestones_marker}\n\n{milestone_entry}\n" + main_content[marker_pos:]
+        else:
+            # Append at the end
+            main_content += f"\n\n{milestones_marker}\n\n{milestone_entry}"
     
     filesystem.write_main_md(main_content)
 

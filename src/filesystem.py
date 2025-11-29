@@ -1,9 +1,11 @@
 """File system operations for context management"""
 
 import os
+import subprocess
 import yaml
 from pathlib import Path
-from typing import Optional, List
+from datetime import datetime
+from typing import Optional, List, Tuple
 from .models import (
     CommitEntry, LogEntry, MetadataYAML,
     commits_to_yaml, commits_from_yaml,
@@ -19,6 +21,7 @@ from .templates import (
 
 # Configurable workspace root (set via set_workspace_root)
 _workspace_root: Optional[str] = None
+_workspace_auto_detected: bool = False
 
 # Constants (relative to workspace root)
 CONTEXT_DIR_NAME = ".context"
@@ -26,16 +29,81 @@ CONTEXT_DIR_NAME = ".context"
 
 def set_workspace_root(path: str) -> None:
     """Set the workspace root directory for context storage"""
-    global _workspace_root
+    global _workspace_root, _workspace_auto_detected
     _workspace_root = os.path.abspath(path)
+    _workspace_auto_detected = False
+
+
+def _detect_git_root(start_path: Optional[str] = None) -> Optional[str]:
+    """Detect git repository root directory"""
+    try:
+        cwd = start_path or os.getcwd()
+        result = subprocess.run(
+            ['git', 'rev-parse', '--show-toplevel'],
+            capture_output=True,
+            text=True,
+            cwd=cwd
+        )
+        if result.returncode == 0:
+            return result.stdout.strip()
+    except (FileNotFoundError, Exception):
+        pass
+    return None
+
+
+def _find_existing_context_dir(start_path: Optional[str] = None) -> Optional[str]:
+    """Walk up from start_path looking for an existing .context directory"""
+    current = os.path.abspath(start_path or os.getcwd())
+    
+    # Limit search to prevent infinite loops
+    for _ in range(20):
+        context_path = os.path.join(current, CONTEXT_DIR_NAME)
+        if os.path.isdir(context_path):
+            return current
+        
+        parent = os.path.dirname(current)
+        if parent == current:  # Reached root
+            break
+        current = parent
+    
+    return None
+
+
+def auto_detect_workspace() -> Tuple[Optional[str], str]:
+    """
+    Auto-detect the workspace root directory.
+    
+    Returns:
+        Tuple of (workspace_path, detection_method)
+        detection_method is one of: 'existing_context', 'git_root', 'cwd', 'not_found'
+    """
+    # Priority 1: Look for existing .context directory
+    existing = _find_existing_context_dir()
+    if existing:
+        return existing, 'existing_context'
+    
+    # Priority 2: Use git repository root
+    git_root = _detect_git_root()
+    if git_root:
+        return git_root, 'git_root'
+    
+    # Priority 3: Fall back to current working directory
+    return os.getcwd(), 'cwd'
 
 
 def get_workspace_root() -> str:
-    """Get the workspace root directory, defaults to current working directory"""
-    global _workspace_root
+    """Get the workspace root directory, auto-detecting if not explicitly set"""
+    global _workspace_root, _workspace_auto_detected
     if _workspace_root is None:
-        _workspace_root = os.getcwd()
+        detected, method = auto_detect_workspace()
+        _workspace_root = detected
+        _workspace_auto_detected = True
     return _workspace_root
+
+
+def is_workspace_auto_detected() -> bool:
+    """Check if workspace was auto-detected (vs explicitly set)"""
+    return _workspace_auto_detected
 
 
 def _get_context_dir() -> str:
@@ -189,7 +257,10 @@ def get_current_branch() -> Optional[str]:
     
     try:
         with open(current_branch_file, 'r', encoding='utf-8') as f:
-            branch_name = f.read().strip()
+            content = f.read().strip()
+            # Parse format: "branch_name\ntimestamp" (timestamp is optional for backwards compat)
+            lines = content.split('\n')
+            branch_name = lines[0].strip() if lines else ""
             if branch_name and branch_exists(branch_name):
                 return branch_name
             return None
@@ -197,15 +268,43 @@ def get_current_branch() -> Optional[str]:
         return None
 
 
+def get_current_branch_info() -> Optional[Tuple[str, Optional[str]]]:
+    """
+    Get current branch name and session timestamp.
+    
+    Returns:
+        Tuple of (branch_name, timestamp) or None if no branch set.
+        timestamp may be None for legacy .current_branch files.
+    """
+    current_branch_file = _get_current_branch_file()
+    
+    if not os.path.exists(current_branch_file):
+        return None
+    
+    try:
+        with open(current_branch_file, 'r', encoding='utf-8') as f:
+            content = f.read().strip()
+            lines = content.split('\n')
+            branch_name = lines[0].strip() if lines else ""
+            timestamp = lines[1].strip() if len(lines) > 1 else None
+            
+            if branch_name and branch_exists(branch_name):
+                return (branch_name, timestamp)
+            return None
+    except Exception:
+        return None
+
+
 def set_current_branch(branch_name: str) -> None:
-    """Set the current branch"""
+    """Set the current branch with session timestamp"""
     if not branch_exists(branch_name):
         raise ValueError(f"Branch '{branch_name}' does not exist")
     
     ensure_context_directory()
     current_branch_file = _get_current_branch_file()
+    timestamp = datetime.now().isoformat()
     with open(current_branch_file, 'w', encoding='utf-8') as f:
-        f.write(branch_name)
+        f.write(f"{branch_name}\n{timestamp}")
 
 
 def list_branches() -> List[str]:

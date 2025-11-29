@@ -25,6 +25,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from src import filesystem, commands
 from src.models import get_current_timestamp
+import subprocess
 
 
 def parse_args():
@@ -39,6 +40,42 @@ def parse_args():
         help="Workspace root directory for context storage (default: current working directory)"
     )
     return parser.parse_args()
+
+
+def auto_detect_workspace() -> Optional[str]:
+    """
+    Auto-detect workspace by:
+    1. Looking for .context folder walking up from CWD
+    2. Finding git root
+    Returns the detected workspace path or None
+    """
+    cwd = os.getcwd()
+    
+    # Strategy 1: Walk up looking for existing .context folder
+    current = cwd
+    while True:
+        context_path = os.path.join(current, ".context")
+        if os.path.isdir(context_path):
+            return current
+        parent = os.path.dirname(current)
+        if parent == current:  # Reached root
+            break
+        current = parent
+    
+    # Strategy 2: Try git root
+    try:
+        result = subprocess.run(
+            ['git', 'rev-parse', '--show-toplevel'],
+            capture_output=True,
+            text=True,
+            cwd=cwd
+        )
+        if result.returncode == 0:
+            return result.stdout.strip()
+    except (FileNotFoundError, Exception):
+        pass
+    
+    return None
 
 
 class MCPServer:
@@ -92,6 +129,10 @@ class MCPServer:
                         "empty": {
                             "type": "boolean",
                             "description": "Create empty branch with no prior context (default: false)"
+                        },
+                        "purpose": {
+                            "type": "string",
+                            "description": "Description of the branch purpose (e.g., 'Implement user authentication')"
                         }
                     },
                     "required": ["name"]
@@ -202,8 +243,46 @@ class MCPServer:
                 "isError": True
             }
     
+    def _ensure_workspace_set(self) -> Optional[str]:
+        """
+        Ensure workspace is properly set. Returns error message if not set and can't auto-detect.
+        Returns None if workspace is ready.
+        """
+        context_dir = filesystem.get_context_dir()
+        
+        # If .context already exists, we're good
+        if os.path.isdir(context_dir):
+            return None
+        
+        # Try auto-detection
+        detected = auto_detect_workspace()
+        if detected:
+            filesystem.set_workspace_root(detected)
+            # Check again if .context exists in detected workspace
+            context_dir = filesystem.get_context_dir()
+            if os.path.isdir(context_dir):
+                return None
+            # .context doesn't exist but we found a good workspace, that's OK
+            return None
+        
+        # Can't auto-detect - return helpful message
+        current_workspace = filesystem.get_workspace_root()
+        return (
+            f"⚠️ No .context folder found and couldn't auto-detect workspace.\n"
+            f"Current workspace: {current_workspace}\n\n"
+            f"Please call context_set_workspace with your project's absolute path first:\n"
+            f"  context_set_workspace(workspace_path=\"/path/to/your/project\")\n\n"
+            f"This will create a .context folder to store your development context."
+        )
+    
     def _execute_tool(self, tool_name: str, arguments: dict) -> str:
         """Execute a tool and return the result"""
+        
+        # context_set_workspace doesn't need workspace check
+        if tool_name != "context_set_workspace":
+            workspace_error = self._ensure_workspace_set()
+            if workspace_error:
+                return workspace_error
         
         if tool_name == "context_log":
             reasoning_step = arguments.get("reasoning_step", "")
@@ -229,14 +308,16 @@ class MCPServer:
             
             from_branch = arguments.get("from_branch")
             empty = arguments.get("empty", False)
+            purpose = arguments.get("purpose")
             
             # Check if branch exists - switch to it
             if filesystem.branch_exists(name):
                 filesystem.set_current_branch(name)
                 return f"✓ Switched to existing branch '{name}'"
             else:
-                commands.branch_command(branch_name=name, from_branch=from_branch, empty=empty)
-                return f"✓ Created and switched to branch '{name}'"
+                commands.branch_command(branch_name=name, from_branch=from_branch, empty=empty, purpose=purpose)
+                purpose_msg = f" (Purpose: {purpose})" if purpose else ""
+                return f"✓ Created and switched to branch '{name}'{purpose_msg}"
         
         elif tool_name == "context_merge":
             branches = arguments.get("branches", [])

@@ -33,19 +33,24 @@ class CommitEntry:
     """A single commit entry stored in commits.yaml"""
     commit_id: str  # Unique identifier (timestamp or UUID)
     branch_purpose: str  # Reiteration of branch purpose
-    previous_progress: str  # Combined previous progress + contribution
     commit_contribution: str  # What this commit adds
     timestamp: str  # ISO format datetime string
+    parent_commit: Optional[str] = None  # Reference to parent commit ID (None for first commit)
+    # Deprecated: previous_progress is kept for backwards compatibility but not used for new commits
+    previous_progress: Optional[str] = None
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for YAML serialization"""
-        return {
+        result = {
             'commit_id': self.commit_id,
             'timestamp': self.timestamp,
             'branch_purpose': self.branch_purpose,
-            'previous_progress': self.previous_progress,
             'commit_contribution': self.commit_contribution
         }
+        if self.parent_commit:
+            result['parent_commit'] = self.parent_commit
+        # Don't write previous_progress for new commits (storage optimization)
+        return result
     
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'CommitEntry':
@@ -54,21 +59,21 @@ class CommitEntry:
             commit_id=data['commit_id'],
             timestamp=data['timestamp'],
             branch_purpose=data['branch_purpose'],
-            previous_progress=data['previous_progress'],
-            commit_contribution=data['commit_contribution']
+            commit_contribution=data['commit_contribution'],
+            parent_commit=data.get('parent_commit'),
+            # Support legacy previous_progress for backwards compatibility
+            previous_progress=data.get('previous_progress')
         )
     
     def to_markdown(self) -> str:
         """Convert to markdown format for LLM consumption"""
+        parent_info = f"\n**Parent:** {self.parent_commit}" if self.parent_commit else ""
         return f"""## Commit {self.commit_id}
 
-**Timestamp:** {self.timestamp}
+**Timestamp:** {self.timestamp}{parent_info}
 
 ### Branch Purpose
 {self.branch_purpose}
-
-### Previous Progress
-{self.previous_progress}
 
 ### Commit Contribution
 {self.commit_contribution}

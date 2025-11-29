@@ -1,0 +1,281 @@
+================================================================================
+CONTEXT MANAGEMENT MCP - IMPROVEMENT SUGGESTIONS
+================================================================================
+Generated: 2025-11-29
+Based on testing with a sample Python calculator project
+
+================================================================================
+🔴 HIGH PRIORITY
+================================================================================
+
+1. AUTO-WORKSPACE DETECTION
+---------------------------
+Problem: Requires explicit `context_set_workspace("/path/to/project")` at the 
+         start of every session. This is friction and defeats the purpose of 
+         context persistence.
+
+Suggestions:
+  - Auto-detect from git root: `git rev-parse --show-toplevel`
+  - Walk up from CWD looking for `.context/` folder
+  - Store a global "last workspace" preference
+  - Use Cursor's workspace path (available in user_info)
+
+Implementation hint: On first tool call, if workspace not set, auto-detect.
+
+
+2. MAIN.MD NEVER UPDATED
+------------------------
+Problem: Project goals, milestones, and TODO list in main.md are never 
+         populated. Only merge history is auto-updated.
+
+Current state:
+  ```
+  # Project Goals
+  <!-- High-level description... -->  <-- Never filled in!
+  
+  ## Key Milestones
+  <!-- Track major milestones... -->  <-- Never filled in!
+  
+  ## TODO List
+  <!-- Shared TODO items... -->       <-- Never filled in!
+  ```
+
+Suggestions:
+  - Add `context_set_goal` tool to define project goals
+  - Add `context_add_milestone` tool to record milestones
+  - Add `context_add_todo` / `context_complete_todo` for shared TODOs
+  - Or: Auto-extract from commits/logs using heuristics
+
+
+3. METADATA.YAML NOT BEING USED
+-------------------------------
+Problem: metadata.yaml contains only empty placeholders:
+  ```yaml
+  file_structure: {}
+  env_config: {}
+  ```
+
+This metadata could be incredibly valuable for context restoration.
+
+Suggestions:
+  - Add `context_record_files` - auto-scan and record file structure
+  - Add `context_set_env` - record Python version, dependencies, etc.
+  - Or: Auto-populate during `context_commit`
+  - Store key file hashes to detect what changed between sessions
+
+
+================================================================================
+🟡 MEDIUM PRIORITY
+================================================================================
+
+4. DUPLICATE LOGS ON MERGE
+--------------------------
+Problem: When merging branches, logs that were already in the base branch 
+         get duplicated with `source_branch` tags.
+
+Example after merge:
+  ```yaml
+  - timestamp: '2025-11-29T12:53:44'
+    reasoning_step: Starting a new Python calculator demo...
+  
+  - timestamp: '2025-11-29T12:53:44'
+    reasoning_step: Starting a new Python calculator demo...
+    source_branch: add-scientific-functions  # DUPLICATE!
+  ```
+
+Suggestion: Deduplicate on merge using (timestamp, reasoning_step) as unique key.
+            Only add logs that don't already exist in target branch.
+
+
+5. PREVIOUS_PROGRESS BLOAT IN COMMITS.YAML
+------------------------------------------
+Problem: Each commit stores the ENTIRE history of all previous commits in 
+         `previous_progress`. This grows infinitely and wastes tokens.
+
+Current (wasteful):
+  ```yaml
+  - commit_id: 2025-11-29T12-56-16
+    previous_progress: 'Initial state
+      Initial calculator project setup...
+      Added scientific functions...
+      Merged branches...'  # ENTIRE HISTORY REPEATED
+  ```
+
+Suggestion: Use references instead:
+  ```yaml
+  - commit_id: 2025-11-29T12-56-16
+    parent_commit: 2025-11-29T12-55-54  # Just a reference
+    commit_contribution: 'Merged branches: add-scientific-functions'
+  ```
+
+
+6. .CURRENT_BRANCH AMBIENT STATE
+--------------------------------
+Problem: `.current_branch` persists across sessions, which can cause confusion:
+  - Session 1: Sets branch to `feature-A`
+  - Session 2: Unknowingly writes to `feature-A` without realizing
+
+Suggestions:
+  - Always require branch name in tool calls (explicit > implicit)
+  - Prominently warn if branch was set by a previous session
+  - Add session timestamps to detect stale branch selections
+
+
+7. BRANCH PURPOSE ALWAYS "Development branch"
+---------------------------------------------
+Problem: When creating branches, the purpose is always generic:
+  ```yaml
+  branch_purpose: Development branch
+  ```
+
+Suggestion: Allow setting description when creating branch:
+  ```
+  context_branch(name="add-auth", purpose="Implement user authentication")
+  ```
+
+
+================================================================================
+🟢 LOWER PRIORITY
+================================================================================
+
+8. YAML FILES HARD FOR HUMANS TO READ
+-------------------------------------
+Problems:
+  - Awkward line wrapping in multi-line strings
+  - ISO timestamps ('2025-11-29T12:53:44.536162') not human-friendly
+  - No visual hierarchy, just flat lists
+  - YAML quoting rules make strings look messy
+
+Note: YAML is actually great for LLMs (structured, explicit key-values).
+
+Suggestion: Add `context_summary` tool that outputs formatted markdown:
+  ```
+  ## Branch: python-calculator-demo
+  
+  ### Recent Activity
+  - **Nov 29, 12:54pm** - Initial calculator setup
+  - **Nov 29, 12:55pm** - Added scientific functions
+  
+  ### Key Decisions
+  - Used pytest for testing
+  - Implemented history tracking in Calculator class
+  ```
+
+
+9. SEMANTIC LOG QUERIES
+-----------------------
+Problem: Can only view all logs sequentially. No way to find specific context.
+
+Suggestion: Add `context_search` tool:
+  ```
+  context_search(query="What decisions were made about error handling?")
+  context_search(query="Why did we choose pytest?")
+  ```
+
+
+10. CONTEXT EXPORT/IMPORT
+-------------------------
+Problem: If MCP isn't available, no way to transfer context.
+
+Suggestion: Add `context_export` tool that generates a portable markdown summary
+            that can be pasted into a new chat:
+  ```
+  context_export(format="markdown", include=["commits", "decisions", "todos"])
+  ```
+
+
+11. LOG CATEGORIES
+------------------
+Problem: All logs are the same type. Hard to filter by purpose.
+
+Suggestion: Allow categorizing logs:
+  ```
+  context_log(step="...", category="decision")
+  context_log(step="...", category="investigation")  
+  context_log(step="...", category="bug-fix")
+  ```
+
+Then filter: `context_info(level="session", category="decision")`
+
+
+12. PRUNE/ARCHIVE OLD BRANCHES
+------------------------------
+Problem: Branches accumulate over time with no cleanup mechanism.
+
+Suggestion: Add `context_prune` or `context_archive`:
+  - Archive branches older than N days
+  - Delete merged branches
+  - Compress old logs
+
+
+13. CODE SNAPSHOTS IN COMMITS
+-----------------------------
+Problem: Commits only store text descriptions. No record of actual code state.
+
+Suggestion: Optionally capture:
+  - File hashes at commit time
+  - Key code snippets (function signatures, class definitions)
+  - Diff summaries from git
+
+
+14. CROSS-PROJECT CONTEXT
+-------------------------
+Problem: Context is siloed per workspace. Can't reference patterns from 
+         other projects.
+
+Suggestion: Global "learnings" database:
+  - "In project X, we solved auth this way..."
+  - "This pattern worked well for API design..."
+
+
+================================================================================
+IMPLEMENTATION PRIORITY ORDER
+================================================================================
+
+Phase 1 (Quick Wins):
+  [ ] Auto-workspace detection (#1)
+  [ ] Fix duplicate logs on merge (#4)
+  [ ] Add branch purpose/description (#7)
+
+Phase 2 (Core Value):
+  [ ] Tools for main.md (goals/milestones/todos) (#2)
+  [ ] Auto-populate metadata.yaml (#3)
+  [ ] Fix previous_progress bloat (#5)
+
+Phase 3 (Polish):
+  [ ] Human-readable summary tool (#8)
+  [ ] Semantic search (#9)
+  [ ] Export/import (#10)
+
+Phase 4 (Advanced):
+  [ ] Log categories (#11)
+  [ ] Prune/archive (#12)
+  [ ] Code snapshots (#13)
+  [ ] Cross-project context (#14)
+
+
+================================================================================
+TESTING NOTES
+================================================================================
+
+Tested features that work well:
+  ✅ context_set_workspace - Sets project-specific context storage
+  ✅ context_branch - Creates and switches branches
+  ✅ context_log - Records reasoning steps with timestamps
+  ✅ context_commit - Checkpoints progress with messages
+  ✅ context_info - Shows project/branch/session info at different levels
+  ✅ context_status - Quick overview of current state
+  ✅ context_merge - Merges context from other branches
+
+File structure created:
+  .context/
+  ├── .current_branch      # Tracks active branch (single line)
+  ├── main.md              # Project-level goals & merge history
+  └── branches/
+      └── {branch-name}/
+          ├── commits.yaml  # Checkpoint history
+          ├── log.yaml      # Reasoning steps
+          └── metadata.yaml # File structure, env config (currently unused)
+
+
+
