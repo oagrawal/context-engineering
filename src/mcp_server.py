@@ -4,8 +4,16 @@ MCP Server for Context Management System
 
 This server exposes context management tools via the Model Context Protocol,
 allowing AI assistants (Claude, Cursor, Gemini CLI) to manage development context.
+
+Usage:
+    python mcp_server.py [--workspace PATH]
+
+Arguments:
+    --workspace PATH    Set the workspace root directory for context storage.
+                        If not provided, uses the current working directory.
 """
 
+import argparse
 import asyncio
 import json
 import sys
@@ -17,6 +25,20 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from src import filesystem, commands
 from src.models import get_current_timestamp
+
+
+def parse_args():
+    """Parse command line arguments"""
+    parser = argparse.ArgumentParser(
+        description="MCP Server for Context Management System"
+    )
+    parser.add_argument(
+        "--workspace", "-w",
+        type=str,
+        default=None,
+        help="Workspace root directory for context storage (default: current working directory)"
+    )
+    return parser.parse_args()
 
 
 class MCPServer:
@@ -113,6 +135,19 @@ class MCPServer:
                     "type": "object",
                     "properties": {},
                     "required": []
+                }
+            },
+            "context_set_workspace": {
+                "description": "Set the workspace directory for context storage. Call this at the start of each project session to ensure context is stored in the correct project folder. This creates a .context folder in the specified workspace.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "workspace_path": {
+                            "type": "string",
+                            "description": "Absolute path to the project/workspace directory where .context folder should be created"
+                        }
+                    },
+                    "required": ["workspace_path"]
                 }
             }
         }
@@ -232,6 +267,8 @@ class MCPServer:
             branches = filesystem.list_branches()
             
             status = []
+            status.append(f"Workspace: {filesystem.get_workspace_root()}")
+            status.append(f"Context folder: {filesystem.get_context_dir()}")
             status.append(f"Current branch: {current_branch or 'None'}")
             status.append(f"Available branches: {', '.join(branches) if branches else 'None'}")
             
@@ -246,6 +283,25 @@ class MCPServer:
                     status.append(f"Latest commit: {commits[-1].timestamp}")
             
             return "\n".join(status)
+        
+        elif tool_name == "context_set_workspace":
+            workspace_path = arguments.get("workspace_path", "")
+            if not workspace_path:
+                return "Error: workspace_path is required"
+            
+            # Validate the path exists
+            if not os.path.isdir(workspace_path):
+                return f"Error: Directory does not exist: {workspace_path}"
+            
+            # Set the workspace root
+            abs_path = os.path.abspath(workspace_path)
+            filesystem.set_workspace_root(abs_path)
+            
+            # Initialize the context directory
+            filesystem.ensure_context_directory()
+            
+            context_dir = filesystem.get_context_dir()
+            return f"✓ Workspace set to: {abs_path}\n✓ Context folder: {context_dir}"
         
         else:
             return f"Error: Unknown tool '{tool_name}'"
@@ -270,29 +326,27 @@ class MCPServer:
                 request = json.loads(line.decode())
                 response = self.handle_request(request)
                 
-                response_line = json.dumps(response) + "\n"
-                writer.write(response_line.encode())
-                await writer.drain()
+                # Only send response if it's not None (notifications don't get responses)
+                if response is not None:
+                    response_line = json.dumps(response) + "\n"
+                    writer.write(response_line.encode())
+                    await writer.drain()
                 
             except json.JSONDecodeError:
                 continue
             except Exception as e:
-                error_response = {
-                    "jsonrpc": "2.0",
-                    "id": None,
-                    "error": {
-                        "code": -32603,
-                        "message": str(e)
-                    }
-                }
-                writer.write((json.dumps(error_response) + "\n").encode())
-                await writer.drain()
+                # Only send error response if we have a request id
+                # Otherwise it's a notification and we shouldn't respond
+                pass
     
-    def handle_request(self, request: dict) -> dict:
-        """Handle a JSON-RPC request"""
+    def handle_request(self, request: dict) -> Optional[dict]:
+        """Handle a JSON-RPC request. Returns None for notifications (no id)."""
         method = request.get("method", "")
         params = request.get("params", {})
         request_id = request.get("id")
+        
+        # Check if this is a notification (no id field means notification)
+        is_notification = "id" not in request
         
         result = None
         error = None
@@ -301,13 +355,20 @@ class MCPServer:
             if method == "initialize":
                 result = self.handle_initialize(params)
             elif method == "initialized":
-                result = {}
+                # This is always a notification, no response needed
+                return None
+            elif method == "notifications/initialized":
+                # Alternative notification format
+                return None
             elif method == "tools/list":
                 result = self.handle_list_tools(params)
             elif method == "tools/call":
                 result = self.handle_call_tool(params)
             elif method == "ping":
                 result = {}
+            elif method.startswith("notifications/"):
+                # All notifications - no response
+                return None
             else:
                 error = {
                     "code": -32601,
@@ -318,6 +379,10 @@ class MCPServer:
                 "code": -32603,
                 "message": str(e)
             }
+        
+        # Don't respond to notifications
+        if is_notification:
+            return None
         
         response = {"jsonrpc": "2.0", "id": request_id}
         if error:
@@ -330,6 +395,16 @@ class MCPServer:
 
 def main():
     """Entry point for MCP server"""
+    args = parse_args()
+    
+    # Set workspace root if provided, otherwise use current working directory
+    if args.workspace:
+        workspace_path = os.path.abspath(args.workspace)
+    else:
+        workspace_path = os.getcwd()
+    
+    filesystem.set_workspace_root(workspace_path)
+    
     server = MCPServer()
     asyncio.run(server.run())
 

@@ -17,7 +17,48 @@ from .templates import (
 )
 
 
-# Constants
+# Configurable workspace root (set via set_workspace_root)
+_workspace_root: Optional[str] = None
+
+# Constants (relative to workspace root)
+CONTEXT_DIR_NAME = ".context"
+
+
+def set_workspace_root(path: str) -> None:
+    """Set the workspace root directory for context storage"""
+    global _workspace_root
+    _workspace_root = os.path.abspath(path)
+
+
+def get_workspace_root() -> str:
+    """Get the workspace root directory, defaults to current working directory"""
+    global _workspace_root
+    if _workspace_root is None:
+        _workspace_root = os.getcwd()
+    return _workspace_root
+
+
+def _get_context_dir() -> str:
+    """Get the full path to the context directory"""
+    return os.path.join(get_workspace_root(), CONTEXT_DIR_NAME)
+
+
+def _get_branches_dir() -> str:
+    """Get the full path to the branches directory"""
+    return os.path.join(_get_context_dir(), "branches")
+
+
+def _get_current_branch_file() -> str:
+    """Get the full path to the current branch file"""
+    return os.path.join(_get_context_dir(), ".current_branch")
+
+
+def _get_main_md_file() -> str:
+    """Get the full path to main.md"""
+    return os.path.join(_get_context_dir(), "main.md")
+
+
+# Legacy constants for backward compatibility (use functions above instead)
 CONTEXT_DIR = ".context"
 BRANCHES_DIR = os.path.join(CONTEXT_DIR, "branches")
 CURRENT_BRANCH_FILE = os.path.join(CONTEXT_DIR, ".current_branch")
@@ -26,45 +67,53 @@ MAIN_MD_FILE = os.path.join(CONTEXT_DIR, "main.md")
 
 def get_context_dir() -> str:
     """Get the context directory path"""
-    return CONTEXT_DIR
+    return _get_context_dir()
 
 
 def get_branches_dir() -> str:
     """Get the branches directory path"""
-    return BRANCHES_DIR
+    return _get_branches_dir()
 
 
 def initialize_context_directory() -> None:
     """Initialize .context/ directory structure if it doesn't exist"""
-    os.makedirs(BRANCHES_DIR, exist_ok=True)
+    branches_dir = _get_branches_dir()
+    main_md_file = _get_main_md_file()
+    
+    os.makedirs(branches_dir, exist_ok=True)
     
     # Create main.md if it doesn't exist
-    if not os.path.exists(MAIN_MD_FILE):
-        with open(MAIN_MD_FILE, 'w', encoding='utf-8') as f:
+    if not os.path.exists(main_md_file):
+        with open(main_md_file, 'w', encoding='utf-8') as f:
             f.write(get_main_md_template())
 
 
 def ensure_context_directory() -> None:
     """Ensure context directory exists, create if it doesn't"""
-    if not os.path.exists(CONTEXT_DIR):
+    context_dir = _get_context_dir()
+    branches_dir = _get_branches_dir()
+    
+    if not os.path.exists(context_dir):
         initialize_context_directory()
-    elif not os.path.exists(BRANCHES_DIR):
-        os.makedirs(BRANCHES_DIR, exist_ok=True)
+    elif not os.path.exists(branches_dir):
+        os.makedirs(branches_dir, exist_ok=True)
 
 
 def get_main_md_path() -> str:
     """Get the path to main.md"""
-    return MAIN_MD_FILE
+    return _get_main_md_file()
 
 
 def validate_main_md() -> bool:
     """Validate that main.md exists and has basic structure"""
-    if not os.path.exists(MAIN_MD_FILE):
+    main_md_file = _get_main_md_file()
+    
+    if not os.path.exists(main_md_file):
         return False
     
     # Check if file has basic sections
     try:
-        with open(MAIN_MD_FILE, 'r', encoding='utf-8') as f:
+        with open(main_md_file, 'r', encoding='utf-8') as f:
             content = f.read()
             # Check for key sections (basic validation)
             return '# Project Goals' in content or 'Project Goals' in content
@@ -75,29 +124,32 @@ def validate_main_md() -> bool:
 def create_main_md() -> None:
     """Create or recreate main.md with template"""
     ensure_context_directory()
-    with open(MAIN_MD_FILE, 'w', encoding='utf-8') as f:
+    main_md_file = _get_main_md_file()
+    with open(main_md_file, 'w', encoding='utf-8') as f:
         f.write(get_main_md_template())
 
 
 def read_main_md() -> str:
     """Read main.md content"""
-    if not os.path.exists(MAIN_MD_FILE):
+    main_md_file = _get_main_md_file()
+    if not os.path.exists(main_md_file):
         create_main_md()
     
-    with open(MAIN_MD_FILE, 'r', encoding='utf-8') as f:
+    with open(main_md_file, 'r', encoding='utf-8') as f:
         return f.read()
 
 
 def write_main_md(content: str) -> None:
     """Write content to main.md"""
     ensure_context_directory()
-    with open(MAIN_MD_FILE, 'w', encoding='utf-8') as f:
+    main_md_file = _get_main_md_file()
+    with open(main_md_file, 'w', encoding='utf-8') as f:
         f.write(content)
 
 
 def get_branch_dir(branch_name: str) -> str:
     """Get the directory path for a branch"""
-    return os.path.join(BRANCHES_DIR, branch_name)
+    return os.path.join(_get_branches_dir(), branch_name)
 
 
 def branch_exists(branch_name: str) -> bool:
@@ -130,11 +182,13 @@ def get_branch_metadata_path(branch_name: str) -> str:
 
 def get_current_branch() -> Optional[str]:
     """Get the current branch name from .current_branch file"""
-    if not os.path.exists(CURRENT_BRANCH_FILE):
+    current_branch_file = _get_current_branch_file()
+    
+    if not os.path.exists(current_branch_file):
         return None
     
     try:
-        with open(CURRENT_BRANCH_FILE, 'r', encoding='utf-8') as f:
+        with open(current_branch_file, 'r', encoding='utf-8') as f:
             branch_name = f.read().strip()
             if branch_name and branch_exists(branch_name):
                 return branch_name
@@ -149,18 +203,21 @@ def set_current_branch(branch_name: str) -> None:
         raise ValueError(f"Branch '{branch_name}' does not exist")
     
     ensure_context_directory()
-    with open(CURRENT_BRANCH_FILE, 'w', encoding='utf-8') as f:
+    current_branch_file = _get_current_branch_file()
+    with open(current_branch_file, 'w', encoding='utf-8') as f:
         f.write(branch_name)
 
 
 def list_branches() -> List[str]:
     """List all existing branches"""
-    if not os.path.exists(BRANCHES_DIR):
+    branches_dir = _get_branches_dir()
+    
+    if not os.path.exists(branches_dir):
         return []
     
     branches = []
-    for item in os.listdir(BRANCHES_DIR):
-        branch_path = os.path.join(BRANCHES_DIR, item)
+    for item in os.listdir(branches_dir):
+        branch_path = os.path.join(branches_dir, item)
         if os.path.isdir(branch_path):
             branches.append(item)
     
