@@ -84,62 +84,120 @@ class MCPServer:
     def __init__(self):
         self.tools = {
             "context_log": {
-                "description": "Log a reasoning step during AI thought process. Call this frequently as you work through problems to record your thinking.",
+                "description": """Log a reasoning step during AI thought process. Call this frequently as you work through problems to record your thinking.
+
+### WHEN TO CALL (Required Behaviors)
+- **AFTER** making any significant discovery or decision
+- **AFTER** completing a file edit or code change
+- **WHEN** encountering an error or unexpected behavior
+- **WHEN** changing approach or strategy
+- **EVERY 2-3 minutes** during active problem-solving (minimum)
+
+### Examples
+- "Investigating auth module - found session token not being refreshed"
+- "Bug identified: race condition in user.save() on line 45"
+- "Decision: Using Redis for session storage instead of memory"
+- "Completed: Added input validation to API endpoints"
+
+### Why This Matters
+Logs create a recoverable trail of reasoning. If the session ends unexpectedly or you return later, these logs let you (or another AI) understand exactly what was being done and why.""",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
                         "reasoning_step": {
                             "type": "string",
-                            "description": "The reasoning or thinking step to log (e.g., 'Investigating auth module...', 'Found bug in line 45...')"
+                            "description": "The reasoning or thinking step to log. Be specific: include file names, line numbers, decisions made, and rationale."
                         }
                     },
                     "required": ["reasoning_step"]
                 }
             },
             "context_commit": {
-                "description": "Checkpoint progress by creating a commit. Call this at major milestones to save your progress.",
+                "description": """Checkpoint progress by creating a commit. Call this at major milestones to save your progress.
+
+### WHEN TO CALL (Required Behaviors)
+- **AFTER** completing a feature, fix, or logical unit of work
+- **BEFORE** switching to a different task or taking a break
+- **AFTER** every 5-10 log entries (consolidate progress)
+- **WHEN** the user indicates they're done for now
+- **BEFORE** context_branch if switching tasks
+
+### Best Practice
+Use `from_log="all"` to automatically summarize your logged work. Only use explicit `message` when you need to override or add context beyond what's in the logs.
+
+### Examples
+- After fixing a bug: commit(from_log="all") 
+- Before break: commit(message="WIP: Authentication 70% complete, next: add password reset")
+- Feature done: commit(from_log="all")""",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
                         "message": {
                             "type": "string",
-                            "description": "Commit message describing what was accomplished (optional if using from_log)"
+                            "description": "Commit message describing what was accomplished. Include: what was done, current state, and what's next."
                         },
                         "from_log": {
                             "type": "string",
-                            "description": "Extract commit content from logs. Use 'all' for all logs, or 'last:N' for last N entries"
+                            "description": "Extract commit content from logs. Use 'all' for all logs since last commit, or 'last:N' for last N entries."
                         }
                     },
                     "required": []
                 }
             },
             "context_branch": {
-                "description": "Create a new context branch or switch to an existing one. Use at the start of a new task.",
+                "description": """Create a new context branch or switch to an existing one. Use at the start of a new task.
+
+### WHEN TO CALL (Required Behaviors)
+- **AT SESSION START**: Check context_status first, then switch to or create appropriate branch
+- **WHEN** starting a new feature, bug fix, or distinct task
+- **WHEN** user asks to work on something different
+- **WHEN** you want to explore an alternative approach without losing current progress
+
+### Branch Naming Convention
+Use descriptive, kebab-case names: `fix-login-bug`, `add-user-auth`, `refactor-database`, `explore-redis-caching`
+
+### Purpose Parameter (Important!)
+Always provide a `purpose` - this helps future sessions understand what the branch is for.
+
+### Examples
+- New feature: branch(name="add-payment-processing", purpose="Implement Stripe payment integration")
+- Bug fix: branch(name="fix-session-timeout", purpose="Fix session expiring prematurely on mobile")
+- Exploration: branch(name="explore-graphql", empty=True, purpose="Evaluate GraphQL vs REST for new API")""",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
                         "name": {
                             "type": "string",
-                            "description": "Branch name (e.g., 'fix-login-bug', 'add-user-auth')"
+                            "description": "Branch name in kebab-case (e.g., 'fix-login-bug', 'add-user-auth')"
                         },
                         "from_branch": {
                             "type": "string",
-                            "description": "Source branch to copy from (optional, defaults to current branch)"
+                            "description": "Source branch to copy context from (defaults to current branch). Use to build on existing progress."
                         },
                         "empty": {
                             "type": "boolean",
-                            "description": "Create empty branch with no prior context (default: false)"
+                            "description": "Create empty branch with no prior context. Use for completely new tasks unrelated to current work."
                         },
                         "purpose": {
                             "type": "string",
-                            "description": "Description of the branch purpose (e.g., 'Implement user authentication')"
+                            "description": "RECOMMENDED: Clear description of the branch purpose (e.g., 'Implement user authentication with OAuth2')"
                         }
                     },
                     "required": ["name"]
                 }
             },
             "context_merge": {
-                "description": "Merge context from other branches into current branch.",
+                "description": """Merge context from other branches into current branch. Use when combining work from parallel efforts.
+
+### WHEN TO CALL
+- **WHEN** completing a feature branch and merging back to main
+- **WHEN** you need learnings from another branch
+- **WHEN** consolidating work from multiple exploration branches
+
+### Example
+After completing a feature in branch 'add-auth', merge it into 'main':
+1. branch(name="main") 
+2. merge(branches=["add-auth"])""",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -153,25 +211,56 @@ class MCPServer:
                 }
             },
             "context_info": {
-                "description": "Get project/branch/session information. Use this to understand current context and previous progress.",
+                "description": """Get project/branch/session information. Use this to understand current context and previous progress.
+
+### WHEN TO CALL (Required Behaviors)
+- **AT SESSION START**: ALWAYS call this first to understand what was done previously
+- **WHEN** returning to work after a break
+- **WHEN** you need to recall previous decisions or progress
+- **BEFORE** making changes that might conflict with previous work
+
+### Levels
+- `project`: High-level goals, all branches, overall status
+- `branch`: Current branch's commits and progress summary (DEFAULT - use this most often)
+- `session`: Detailed logs from current session (use when you need specifics)
+
+### Session Start Pattern
+1. context_status() - see current state
+2. context_info(level="branch") - understand recent progress
+3. Then proceed with work""",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
                         "level": {
                             "type": "string",
                             "enum": ["project", "branch", "session"],
-                            "description": "Information level: 'project' for high-level goals, 'branch' for branch progress, 'session' for detailed logs"
+                            "description": "project=goals/all branches, branch=current progress (default), session=detailed logs"
                         },
                         "branch": {
                             "type": "string",
-                            "description": "Branch name (optional, defaults to current branch)"
+                            "description": "Branch name to inspect (optional, defaults to current branch)"
                         }
                     },
                     "required": []
                 }
             },
             "context_status": {
-                "description": "Get current context status (current branch, recent activity).",
+                "description": """Get current context status (current branch, recent activity).
+
+### WHEN TO CALL (Required Behaviors)
+- **AT EVERY SESSION START**: This is your first call to orient yourself
+- **WHEN** you're unsure what branch you're on
+- **WHEN** you need a quick overview without full details
+
+### What It Returns
+- Current workspace path
+- Current branch name
+- Available branches
+- Commit/log counts
+- Latest activity timestamp
+
+### Session Start Pattern
+This should be your FIRST context call in any new session.""",
                 "inputSchema": {
                     "type": "object",
                     "properties": {},
@@ -179,7 +268,15 @@ class MCPServer:
                 }
             },
             "context_set_workspace": {
-                "description": "Set the workspace directory for context storage. Call this at the start of each project session to ensure context is stored in the correct project folder. This creates a .context folder in the specified workspace.",
+                "description": """Set the workspace directory for context storage. Call this at the start of each project session to ensure context is stored in the correct project folder. This creates a .context folder in the specified workspace.
+
+### WHEN TO CALL
+- **IF** context_status() indicates wrong workspace or no .context folder
+- **WHEN** working on a new project for the first time
+- **WHEN** the workspace path shown doesn't match your current project
+
+### Note
+In most cases, the workspace is auto-detected from git root or existing .context folder. Only call this if auto-detection fails or shows the wrong path.""",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -198,13 +295,182 @@ class MCPServer:
         return {
             "protocolVersion": "2024-11-05",
             "capabilities": {
-                "tools": {}
+                "tools": {},
+                "prompts": {},
+                "resources": {}
             },
             "serverInfo": {
                 "name": "context-management",
                 "version": "0.1.0"
             }
         }
+    
+    def handle_list_prompts(self, params: dict) -> dict:
+        """Handle prompts/list request - expose context management guidelines"""
+        return {
+            "prompts": [
+                {
+                    "name": "context-management-protocol",
+                    "description": "IMPORTANT: Read this at session start. Guidelines for using context management tools to maintain continuity across chat sessions.",
+                    "arguments": []
+                }
+            ]
+        }
+    
+    def handle_get_prompt(self, params: dict) -> dict:
+        """Handle prompts/get request"""
+        prompt_name = params.get("name", "")
+        
+        if prompt_name == "context-management-protocol":
+            return {
+                "description": "Context Management Protocol - Guidelines for AI assistants",
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": {
+                            "type": "text",
+                            "text": """# Context Management Protocol
+
+You have access to context-management tools that maintain continuity across chat sessions. Follow these guidelines:
+
+## 🚨 SESSION START (MANDATORY)
+At the START of every conversation, BEFORE responding to the user:
+1. `context_status()` - Orient yourself (workspace, branch, state)
+2. `context_info(level="branch")` - Recall previous progress
+3. Create/switch branch if needed for current task
+
+## 🔄 DURING WORK
+Log continuously with `context_log()`:
+- After every discovery, decision, or finding
+- After every file edit or code change
+- When encountering errors
+- Every 2-3 minutes minimum
+
+Example: `context_log("Investigating user.py - found auth token issue on line 45")`
+
+## 💾 CHECKPOINTS
+Call `context_commit(from_log="all")`:
+- After completing any feature/fix/unit of work
+- Before switching tasks
+- Every 5-10 log entries
+- When user indicates they're done
+
+## 🌿 BRANCHING
+Create branches for different tasks:
+`context_branch(name="fix-auth-bug", purpose="Fix OAuth token refresh")`
+
+Always provide a `purpose` parameter.
+
+## QUICK REFERENCE
+| When | Action |
+|------|--------|
+| Session starts | `context_status()` → `context_info()` |
+| New task | `context_branch(name="...", purpose="...")` |
+| Made discovery | `context_log("Found: ...")` |
+| Made decision | `context_log("Decision: ...")` |
+| Completed work | `context_log("Completed: ...")` |
+| Unit done | `context_commit(from_log="all")` |
+| User leaving | `context_commit(message="WIP: current state")` |
+
+Use these tools AUTOMATICALLY without being prompted."""
+                        }
+                    }
+                ]
+            }
+        
+        return {"error": f"Unknown prompt: {prompt_name}"}
+    
+    def handle_list_resources(self, params: dict) -> dict:
+        """Handle resources/list request"""
+        return {
+            "resources": [
+                {
+                    "uri": "context://guidelines",
+                    "name": "Context Management Guidelines",
+                    "description": "Read this FIRST at session start - instructions for using context tools",
+                    "mimeType": "text/markdown"
+                },
+                {
+                    "uri": "context://status",
+                    "name": "Current Context Status",
+                    "description": "Current workspace, branch, and recent activity",
+                    "mimeType": "text/plain"
+                }
+            ]
+        }
+    
+    def handle_read_resource(self, params: dict) -> dict:
+        """Handle resources/read request"""
+        uri = params.get("uri", "")
+        
+        if uri == "context://guidelines":
+            return {
+                "contents": [
+                    {
+                        "uri": "context://guidelines",
+                        "mimeType": "text/markdown",
+                        "text": """# Context Management Guidelines
+
+## Session Start Protocol
+1. `context_status()` - Check current state
+2. `context_info(level="branch")` - Recall previous work
+3. Create/switch branch if needed
+
+## During Work
+- `context_log("...")` - Log every discovery, decision, edit
+- Call every 2-3 minutes minimum
+
+## Save Progress  
+- `context_commit(from_log="all")` - After completing work units
+- Commit before switching tasks or ending session
+
+## Branching
+- `context_branch(name="task-name", purpose="description")`
+- Always include purpose parameter
+
+Use these tools AUTOMATICALLY throughout the session."""
+                    }
+                ]
+            }
+        
+        elif uri == "context://status":
+            # Return actual current status
+            try:
+                filesystem.ensure_context_directory()
+                current_branch = filesystem.get_current_branch()
+                branches = filesystem.list_branches()
+                
+                status_lines = [
+                    f"Workspace: {filesystem.get_workspace_root()}",
+                    f"Current branch: {current_branch or 'None'}",
+                    f"Available branches: {', '.join(branches) if branches else 'None'}"
+                ]
+                
+                if current_branch:
+                    commits = filesystem.read_commits(current_branch)
+                    logs = filesystem.read_logs(current_branch)
+                    status_lines.append(f"Commits: {len(commits)}")
+                    status_lines.append(f"Log entries: {len(logs)}")
+                
+                return {
+                    "contents": [
+                        {
+                            "uri": "context://status",
+                            "mimeType": "text/plain",
+                            "text": "\n".join(status_lines)
+                        }
+                    ]
+                }
+            except Exception as e:
+                return {
+                    "contents": [
+                        {
+                            "uri": "context://status",
+                            "mimeType": "text/plain",
+                            "text": f"Error getting status: {str(e)}"
+                        }
+                    ]
+                }
     
     def handle_list_tools(self, params: dict) -> dict:
         """Handle tools/list request"""
@@ -445,6 +711,14 @@ class MCPServer:
                 result = self.handle_list_tools(params)
             elif method == "tools/call":
                 result = self.handle_call_tool(params)
+            elif method == "prompts/list":
+                result = self.handle_list_prompts(params)
+            elif method == "prompts/get":
+                result = self.handle_get_prompt(params)
+            elif method == "resources/list":
+                result = self.handle_list_resources(params)
+            elif method == "resources/read":
+                result = self.handle_read_resource(params)
             elif method == "ping":
                 result = {}
             elif method.startswith("notifications/"):
