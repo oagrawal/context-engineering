@@ -126,16 +126,22 @@ class MetadataYAML:
     
     def __init__(self, file_structure: Optional[Dict[str, Any]] = None,
                  env_config: Optional[Dict[str, Any]] = None,
+                 tracked_files: Optional[List[str]] = None,
+                 keywords: Optional[List[str]] = None,
                  custom_entries: Optional[Dict[str, Any]] = None):
         self.file_structure = file_structure or {}
         self.env_config = env_config or {}
+        self.tracked_files = tracked_files or []  # Files this branch works on
+        self.keywords = keywords or []  # Keywords/topics for branch matching
         self.custom_entries = custom_entries or {}
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for YAML serialization"""
         result = {
             'file_structure': self.file_structure,
-            'env_config': self.env_config
+            'env_config': self.env_config,
+            'tracked_files': self.tracked_files,
+            'keywords': self.keywords
         }
         result.update(self.custom_entries)
         return result
@@ -145,12 +151,16 @@ class MetadataYAML:
         """Create from dictionary"""
         file_structure = data.get('file_structure', {})
         env_config = data.get('env_config', {})
+        tracked_files = data.get('tracked_files', [])
+        keywords = data.get('keywords', [])
         custom_entries = {k: v for k, v in data.items() 
-                         if k not in ['file_structure', 'env_config']}
+                         if k not in ['file_structure', 'env_config', 'tracked_files', 'keywords']}
         
         return cls(
             file_structure=file_structure,
             env_config=env_config,
+            tracked_files=tracked_files,
+            keywords=keywords,
             custom_entries=custom_entries
         )
     
@@ -163,6 +173,17 @@ class MetadataYAML:
         """Create from YAML string"""
         data = yaml.safe_load(yaml_content) or {}
         return cls.from_dict(data)
+    
+    def add_tracked_file(self, filepath: str) -> None:
+        """Add a file to tracked files (deduped)"""
+        if filepath and filepath not in self.tracked_files:
+            self.tracked_files.append(filepath)
+    
+    def add_keyword(self, keyword: str) -> None:
+        """Add a keyword (deduped, lowercase)"""
+        kw = keyword.lower().strip()
+        if kw and kw not in self.keywords:
+            self.keywords.append(kw)
 
 
 def commits_to_yaml(commits: List[CommitEntry]) -> str:
@@ -256,4 +277,3 @@ def find_divergence_point(commits_a: List[CommitEntry], commits_b: List[CommitEn
     
     # Return the last common commit ID
     return common_commits[-1].commit_id
-

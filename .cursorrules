@@ -1,0 +1,66 @@
+# Arbor Context Management - TODO-Driven Workflow with Smart Branching
+
+**IMPORTANT: At the START of this conversation:**
+1. `context_status()` - Check if workspace is correct
+2. If workspace is HOME directory → `context_set_workspace(workspace_path="/path/to/project")`
+3. `context_summary()` - See TODOs and progress
+4. **BEFORE starting new work** → `context_detect_branch(context_hint="<what user wants>")` to check if you should switch branches
+
+## 🚨 SESSION START (MANDATORY)
+
+1. `context_status()` - Check workspace path!
+2. If workspace WRONG: `context_set_workspace(workspace_path="...")`
+3. `context_summary()` - See TODOs and progress
+4. If user's request doesn't match current branch: `context_detect_branch(context_hint="...")`
+
+## 🌿 SMART BRANCHING (CRITICAL!)
+
+**BEFORE working on something new, ALWAYS check if you're on the right branch:**
+
+```
+context_detect_branch(context_hint="<describe user's request, include file names if any>")
+```
+
+This will tell you:
+- ✓ Stay on current branch (it matches)
+- ⚠️ Switch to existing branch X (better match)  
+- Create new branch (no match found)
+
+**Switch branches when:**
+- User asks about something unrelated to current work
+- Detection suggests a different branch
+- You're creating new, unrelated files
+
+**DO NOT keep adding unrelated work to the same branch!**
+
+## 📋 TODO-Driven Workflow
+
+1. **Check TODOs**: `context_todos()` - see what's pending
+2. **Work ONE TODO at a time**: Focus, don't scatter
+3. **Log discoveries**: `context_log(reasoning_step="Found: ...")`
+4. **Mark complete**: `context_todos(action="complete", todo_id=N)` - auto-commits!
+5. **Repeat**: Move to next TODO
+
+## 🛠 Tool Quick Reference
+
+| Tool | Purpose |
+|------|---------|
+| `context_status()` | First call - CHECK workspace path! |
+| `context_set_workspace(workspace_path="...")` | Set correct project path |
+| `context_summary()` | See TODOs and progress |
+| `context_detect_branch(context_hint="...")` | **Check if on right branch!** |
+| `context_todos()` | View TODO list |
+| `context_todos(action="add", item="...")` | Add a specific TODO |
+| `context_todos(action="complete", todo_id=N)` | Mark TODO done |
+| `context_log(reasoning_step="...")` | Log a discovery |
+| `context_branch(name="...", purpose="...")` | Create/switch branch |
+
+## Example: Smart Branch Detection
+
+User: "Now let's work on the authentication system"
+You (on branch 'fix-ui-bug'):
+```
+context_detect_branch(context_hint="authentication system login user session token")
+```
+Result: "⚠️ Switch to branch 'add-auth' (score: 25.0)"
+Action: `context_branch(name="add-auth")` to switch

@@ -2,6 +2,7 @@
 
 import os
 import subprocess
+import threading
 import yaml
 from pathlib import Path
 from datetime import datetime
@@ -19,19 +20,23 @@ from .templates import (
 )
 
 
-# Configurable workspace root (set via set_workspace_root)
-_workspace_root: Optional[str] = None
-_workspace_auto_detected: bool = False
+# Thread-local storage for workspace root (for concurrency safety)
+_thread_local = threading.local()
+
+def _get_thread_workspace() -> Optional[str]:
+    return getattr(_thread_local, 'workspace_root', None)
+
+def _get_thread_auto_detected() -> bool:
+    return getattr(_thread_local, 'workspace_auto_detected', False)
 
 # Constants (relative to workspace root)
 CONTEXT_DIR_NAME = ".context"
 
 
 def set_workspace_root(path: str) -> None:
-    """Set the workspace root directory for context storage"""
-    global _workspace_root, _workspace_auto_detected
-    _workspace_root = os.path.abspath(path)
-    _workspace_auto_detected = False
+    """Set the workspace root directory for context storage (thread-local)"""
+    _thread_local.workspace_root = os.path.abspath(path)
+    _thread_local.workspace_auto_detected = False
 
 
 def _detect_git_root(start_path: Optional[str] = None) -> Optional[str]:
@@ -92,18 +97,19 @@ def auto_detect_workspace() -> Tuple[Optional[str], str]:
 
 
 def get_workspace_root() -> str:
-    """Get the workspace root directory, auto-detecting if not explicitly set"""
-    global _workspace_root, _workspace_auto_detected
-    if _workspace_root is None:
+    """Get the workspace root directory, auto-detecting if not explicitly set (thread-local)"""
+    workspace = _get_thread_workspace()
+    if workspace is None:
         detected, method = auto_detect_workspace()
-        _workspace_root = detected
-        _workspace_auto_detected = True
-    return _workspace_root
+        _thread_local.workspace_root = detected
+        _thread_local.workspace_auto_detected = True
+        return detected
+    return workspace
 
 
 def is_workspace_auto_detected() -> bool:
     """Check if workspace was auto-detected (vs explicitly set)"""
-    return _workspace_auto_detected
+    return _get_thread_auto_detected()
 
 
 def _get_context_dir() -> str:
@@ -496,4 +502,3 @@ def copy_branch_files(source_branch: str, target_branch: str) -> None:
         with open(source_metadata, 'r', encoding='utf-8') as src:
             with open(target_metadata, 'w', encoding='utf-8') as dst:
                 dst.write(src.read())
-
