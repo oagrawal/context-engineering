@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "context-management": {
+      "command": "python3",
+      "args": ["-m", "src.mcp_server"],
+      "cwd": "/path/to/your/project",
+      "env": {}
+    }
+  }
+}
+

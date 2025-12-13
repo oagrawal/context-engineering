@@ -1,19 +1,16 @@
 """Default templates for context files"""
 
 
-def get_main_md_template() -> str:
+def get_main_md_template(project_goal: str = "") -> str:
     """Template for main.md"""
-    return """# Project Goals
+    goal_text = project_goal if project_goal else "_No project goal set yet._"
+    return f"""# Project Goal
 
-<!-- High-level description of the project's purpose and objectives -->
-
-## Key Milestones
-
-<!-- Track major milestones and achievements -->
+{goal_text}
 
 ## TODO List
 
-<!-- Shared TODO items across all branches -->
+## Interaction Log
 
 """
 
@@ -43,17 +40,13 @@ def get_metadata_yaml_template() -> str:
     return """# Branch Metadata
 
 file_structure: {}
-  # Example structure:
-  # src/
-  #   - main.py: "Main entry point"
-  #   - utils.py: "Utility functions"
 
 env_config: {}
-  # Example:
-  # python_version: "3.9+"
-  # dependencies: ["click", "pyyaml"]
 
-# Add custom metadata entries below as needed
+# Files this branch works on (for smart branch detection)
+tracked_files: []
+
+# Keywords/topics for this branch
+keywords: []
 
 """
-

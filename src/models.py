@@ -33,19 +33,24 @@ class CommitEntry:
     """A single commit entry stored in commits.yaml"""
     commit_id: str  # Unique identifier (timestamp or UUID)
     branch_purpose: str  # Reiteration of branch purpose
-    previous_progress: str  # Combined previous progress + contribution
     commit_contribution: str  # What this commit adds
     timestamp: str  # ISO format datetime string
+    parent_commit: Optional[str] = None  # Reference to parent commit ID (None for first commit)
+    # Deprecated: previous_progress is kept for backwards compatibility but not used for new commits
+    previous_progress: Optional[str] = None
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for YAML serialization"""
-        return {
+        result = {
             'commit_id': self.commit_id,
             'timestamp': self.timestamp,
             'branch_purpose': self.branch_purpose,
-            'previous_progress': self.previous_progress,
             'commit_contribution': self.commit_contribution
         }
+        if self.parent_commit:
+            result['parent_commit'] = self.parent_commit
+        # Don't write previous_progress for new commits (storage optimization)
+        return result
     
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'CommitEntry':
@@ -54,21 +59,21 @@ class CommitEntry:
             commit_id=data['commit_id'],
             timestamp=data['timestamp'],
             branch_purpose=data['branch_purpose'],
-            previous_progress=data['previous_progress'],
-            commit_contribution=data['commit_contribution']
+            commit_contribution=data['commit_contribution'],
+            parent_commit=data.get('parent_commit'),
+            # Support legacy previous_progress for backwards compatibility
+            previous_progress=data.get('previous_progress')
         )
     
     def to_markdown(self) -> str:
         """Convert to markdown format for LLM consumption"""
+        parent_info = f"\n**Parent:** {self.parent_commit}" if self.parent_commit else ""
         return f"""## Commit {self.commit_id}
 
-**Timestamp:** {self.timestamp}
+**Timestamp:** {self.timestamp}{parent_info}
 
 ### Branch Purpose
 {self.branch_purpose}
-
-### Previous Progress
-{self.previous_progress}
 
 ### Commit Contribution
 {self.commit_contribution}
@@ -121,16 +126,22 @@ class MetadataYAML:
     
     def __init__(self, file_structure: Optional[Dict[str, Any]] = None,
                  env_config: Optional[Dict[str, Any]] = None,
+                 tracked_files: Optional[List[str]] = None,
+                 keywords: Optional[List[str]] = None,
                  custom_entries: Optional[Dict[str, Any]] = None):
         self.file_structure = file_structure or {}
         self.env_config = env_config or {}
+        self.tracked_files = tracked_files or []  # Files this branch works on
+        self.keywords = keywords or []  # Keywords/topics for branch matching
         self.custom_entries = custom_entries or {}
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for YAML serialization"""
         result = {
             'file_structure': self.file_structure,
-            'env_config': self.env_config
+            'env_config': self.env_config,
+            'tracked_files': self.tracked_files,
+            'keywords': self.keywords
         }
         result.update(self.custom_entries)
         return result
@@ -140,12 +151,16 @@ class MetadataYAML:
         """Create from dictionary"""
         file_structure = data.get('file_structure', {})
         env_config = data.get('env_config', {})
+        tracked_files = data.get('tracked_files', [])
+        keywords = data.get('keywords', [])
         custom_entries = {k: v for k, v in data.items() 
-                         if k not in ['file_structure', 'env_config']}
+                         if k not in ['file_structure', 'env_config', 'tracked_files', 'keywords']}
         
         return cls(
             file_structure=file_structure,
             env_config=env_config,
+            tracked_files=tracked_files,
+            keywords=keywords,
             custom_entries=custom_entries
         )
     
@@ -158,6 +173,17 @@ class MetadataYAML:
         """Create from YAML string"""
         data = yaml.safe_load(yaml_content) or {}
         return cls.from_dict(data)
+    
+    def add_tracked_file(self, filepath: str) -> None:
+        """Add a file to tracked files (deduped)"""
+        if filepath and filepath not in self.tracked_files:
+            self.tracked_files.append(filepath)
+    
+    def add_keyword(self, keyword: str) -> None:
+        """Add a keyword (deduped, lowercase)"""
+        kw = keyword.lower().strip()
+        if kw and kw not in self.keywords:
+            self.keywords.append(kw)
 
 
 def commits_to_yaml(commits: List[CommitEntry]) -> str:
@@ -251,4 +277,3 @@ def find_divergence_point(commits_a: List[CommitEntry], commits_b: List[CommitEn
     
     # Return the last common commit ID
     return common_commits[-1].commit_id
-

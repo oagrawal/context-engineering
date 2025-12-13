@@ -95,4 +95,3 @@ def validate_metadata_yaml(metadata: MetadataYAML) -> tuple[bool, Optional[str]]
         return False, "env_config must be a dictionary"
     
     return True, None
-
